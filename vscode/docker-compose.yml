@@ -1,0 +1,9 @@
+version: "3.8"
+services:
+  service:
+    container_name: elasticsearch_api
+    image: python:3.10.10-slim
+    environment:
+    - "TZ=Asia/Taipei"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
