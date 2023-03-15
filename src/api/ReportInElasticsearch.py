@@ -5,10 +5,10 @@ from elasticsearch import AsyncElasticsearch
 import asyncio
 import aiofiles
 import os
-import PyPDF2
+import fitz
 
-async def download_files(execute_unit, file_body, file_name):
-    prefix_path = f'./upload_files/{execute_unit}/'
+async def download_files(category, file_body, file_name):
+    prefix_path = f'./upload_files/{category}/'
     if not os.path.exists(prefix_path):
         os.makedirs(prefix_path)
     async with aiofiles.open(prefix_path+file_name, 'wb') as f:
@@ -36,7 +36,7 @@ class ReportInElasticsearch(HTTPMethodView):
 
         usename = os.getenv('ELASTICSEARCH_USERNAME')
         password = os.getenv('ELASTICSEARCH_PASSWORD')
-        es = AsyncElasticsearch(hosts='http://host.docker.internal:9200', basic_auth=(usename, password))
+        es = AsyncElasticsearch(hosts=os.getenv('ELASTICSEARCH_LOCAL_CONTAINER'), basic_auth=(usename, password))
         resp = await es.search(index='upload_files', query=query, from_=0, size=10)
         result = []
         resp_dict = dict(resp)['hits']['hits']
@@ -56,12 +56,12 @@ class ReportInElasticsearch(HTTPMethodView):
 
     async def post(self, request):
         files = request.files['files']
-        execute_unit = request.form['execute_unit'][0]
+        category = request.form['category'][0]
         tasks = []
         for file in files:
             file_name = file.name
             file_body = file.body
-            tasks.append(asyncio.create_task(download_files(execute_unit, file_body, file_name)))
+            tasks.append(asyncio.create_task(download_files(category, file_body, file_name)))
         await asyncio.gather(*tasks)
 
         result = {
@@ -73,20 +73,18 @@ class ReportInElasticsearch(HTTPMethodView):
 
 
 # 依關鍵字取資料
-class KeyWordInReport(HTTPMethodView):
+class KeywordInWhichPage(HTTPMethodView):
     async def get(self, request):
         pdf_path = request.args.get('path')
         key_ls = request.args.getlist('key')
+        keyword_in_which_page = {key: [] for key in key_ls}
 
-        # 查詢關鍵字在該PDF的第幾頁
-        keyword_in_page = {key: [] for key in key_ls}
-        with open(pdf_path, 'rb') as pdf_file:
-            pdf_reader = PyPDF2.PdfReader(pdf_file)
-            for i in range(len(pdf_reader.pages)):
-                page = pdf_reader.pages[i]
-                text = page.extract_text()
+        async with aiofiles.open(pdf_path, mode='rb') as pdf_file:
+            file_data = await pdf_file.read()
+            doc = fitz.open("pdf", file_data)
+            for page_num, page in enumerate(doc.pages(), start=1):    # 頁碼是從第一頁開始，所以start=1
                 for key in key_ls:
-                    if key in text:
-                        keyword_in_page[key].append(i+1)    # 頁碼是從第一頁開始，所以必須+1
+                    if key in page.get_text():
+                        keyword_in_which_page[key].append(page_num)
 
-        return json(keyword_in_page, status=200, ensure_ascii=False)
+        return json(keyword_in_which_page, status=200, ensure_ascii=False)

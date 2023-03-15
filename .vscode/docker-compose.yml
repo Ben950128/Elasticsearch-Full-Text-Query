@@ -1,0 +1,9 @@
+version: "3.8"
+services:
+  service:
+    container_name: api_elasticsearch
+    build: .
+    ports:
+      - "6685:6685"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
